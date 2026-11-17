@@ -1,0 +1,47 @@
+name: Dashboard
+
+on:
+  # Rebuild after each weekly archive. (The archive's own commit is pushed
+  # with GITHUB_TOKEN, which doesn't fire push events, so chain on the run.)
+  workflow_run:
+    workflows: ["Weekly archive"]
+    types: [completed]
+  # Rebuild when the page code changes. Never runs the sheet pull.
+  push:
+    branches: [main]
+    paths: [report.py, db.py, data/**]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main # pick up the archive's fresh commit, not the triggering SHA
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build page
+        run: python report.py --out site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
