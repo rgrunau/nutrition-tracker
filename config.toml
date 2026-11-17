@@ -1,0 +1,26 @@
+# nutrition-tracker configuration
+# Edit these values; nothing secret lives here (the key file is separate).
+
+[sheet]
+# The spreadsheet's ID — the long string in its URL between /d/ and /edit.
+# https://docs.google.com/spreadsheets/d/<THIS PART>/edit
+id = "1gU8RV0sdZqH2I2ht1GgtFSJ-jcJv3UeHx4hpleZmAlU"
+
+# The tab (worksheet) that holds the numbers grid.
+worksheet = "Stats"
+
+[week]
+# Which weekday marks the "week ending" date the row is filed under.
+# 0 = Monday ... 6 = Sunday. Your coach's log entries land on Mondays,
+# so this defaults to Monday; change to 6 if you'd rather file by Sunday.
+ending_weekday = 0
+
+[paths]
+# Service-account key file (created during Google Cloud setup).
+credentials = "credentials/service-account.json"
+
+# SQLite database — the source of truth.
+database = "data/history.db"
+
+# Directory the CSV mirrors are written to on every run.
+csv_dir = "data"

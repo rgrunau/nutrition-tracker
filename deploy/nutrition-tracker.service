@@ -1,0 +1,13 @@
+[Unit]
+Description=nutrition-tracker — archive the completed week from the coaching Google Sheet
+Documentation=file:///home/rjg/Work/nutrition-tracker/README.md
+# The one network call is to Google Sheets; wait for connectivity before firing.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rjg/Work/nutrition-tracker
+ExecStart=/home/rjg/Work/nutrition-tracker/.venv/bin/python tracker.py
+# A failed run is harmless — writes are keyed on the week-ending date, so the
+# next timer tick (or a manual run) picks the week up with no duplication.

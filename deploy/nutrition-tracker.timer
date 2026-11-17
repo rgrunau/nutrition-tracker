@@ -1,0 +1,16 @@
+[Unit]
+Description=Weekly nutrition-tracker run (Monday morning, before the new week's grid is entered)
+
+[Timer]
+# Monday night, after the coach's Monday feedback but before the grid is
+# overwritten for the new week. Timezone is pinned so it stays 23:00 Pacific
+# even if the laptop's system clock is set elsewhere.
+# week_ending_for() files a Monday run under that same Monday's date.
+OnCalendar=Mon 23:00 America/Los_Angeles
+# Spread the Google call over a 15-minute window.
+RandomizedDelaySec=15min
+# If the machine was asleep/off at the scheduled time, run at the next wake.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
