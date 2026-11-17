@@ -121,6 +121,17 @@ select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid 
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .row h2 { margin: 0; }
 .empty { color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 16px; }
+.controls label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: .8rem;
+                  text-transform: uppercase; letter-spacing: .04em; min-width: 0; }
+.controls select { font-size: 1rem; text-transform: none; letter-spacing: normal; padding: 8px 10px; max-width: 100%; }
+select:focus-visible, tr.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bar .mark.cmp { background: var(--surface); border: 2px solid var(--muted); width: 6px; }
+.legend { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .85rem; }
+.legend .key { display: inline-block; width: 4px; height: 14px; border-radius: 2px; background: var(--text); }
+.legend .key-cmp { width: 6px; background: var(--surface); border: 2px solid var(--muted); margin-left: 10px; }
+tr.compared { box-shadow: inset 3px 0 0 var(--muted); }
+.charts canvas { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -128,13 +139,25 @@ select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid 
   <h1>Nutrition Tracker</h1>
   <p class="sub" id="sub"></p>
 
+  <section class="controls">
+    <label for="week-pick">Week
+      <select id="week-pick"></select>
+    </label>
+    <label for="compare-pick">Compare to
+      <select id="compare-pick"></select>
+    </label>
+  </section>
+
   <section class="card">
-    <h2 id="latest-title">Latest week</h2>
+    <h2 id="week-title">Week</h2>
     <div class="tiles" id="tiles"></div>
   </section>
 
   <section class="card">
-    <h2>Portions vs. target <span class="tag">weekly totals</span></h2>
+    <div class="row">
+      <h2>Portions vs. target <span class="tag">weekly totals</span></h2>
+      <div class="legend" id="portion-legend"></div>
+    </div>
     <div id="portions"></div>
   </section>
 
@@ -146,15 +169,12 @@ select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid 
   </section>
 
   <section class="card">
-    <div class="row">
-      <h2>Daily breakdown</h2>
-      <select id="week-pick" aria-label="Week"></select>
-    </div>
+    <h2 id="daily-title">Daily breakdown</h2>
     <div class="scroll"><table id="daily"></table></div>
   </section>
 
   <section class="card">
-    <h2>All weeks</h2>
+    <h2>All weeks <span class="tag">click a week to select it</span></h2>
     <div class="scroll"><table id="weeks"></table></div>
   </section>
 </main>
@@ -164,7 +184,10 @@ select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid 
 <script>
 const DATA = JSON.parse(document.getElementById("data").textContent);
 const weeks = DATA.weeks;
+// Only weeks pulled from the sheet have the full set of numbers; weeks from
+// the coach's log carry a weight and nothing else, so they can't be selected.
 const full = weeks.filter(w => w.source === "sheet");
+const byDate = Object.fromEntries(full.map(w => [w.week_ending, w]));
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
 const fmt = (v, d = 1) => v == null ? "—" : Number(v).toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -173,44 +196,91 @@ const dateLabel = iso => new Date(iso + "T12:00:00").toLocaleDateString(undefine
 const short = iso => new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 const el = (tag, attrs = {}, text) => { const e = Object.assign(document.createElement(tag), attrs); if (text != null) e.textContent = text; return e; };
 
-const latest = full[full.length - 1];
-const prev = full[full.length - 2];
 document.getElementById("sub").textContent = weeks.length
   ? `${weeks.length} weeks on record, ${dateLabel(weeks[0].week_ending)} – ${dateLabel(weeks[weeks.length - 1].week_ending)}. Updated every Monday night.`
   : "No data yet.";
 
-// ---- latest week tiles ---------------------------------------------------
-if (latest) {
-  document.getElementById("latest-title").textContent = `Week ending ${dateLabel(latest.week_ending)}`;
+// ---- dropdowns --------------------------------------------------------------
+const weekPick = document.getElementById("week-pick");
+const comparePick = document.getElementById("compare-pick");
+const newestFirst = [...full].reverse();
+for (const w of newestFirst) weekPick.append(el("option", { value: w.week_ending }, `Week ending ${dateLabel(w.week_ending)}`));
+
+const PRIOR = "prior", NONE = "none";
+const state = { week: newestFirst[0]?.week_ending, compare: PRIOR };
+
+function priorOf(we) {
+  const i = full.findIndex(w => w.week_ending === we);
+  return i > 0 ? full[i - 1] : null;
+}
+function compareWeek() {
+  if (state.compare === NONE) return null;
+  if (state.compare === PRIOR) return priorOf(state.week);
+  return byDate[state.compare] || null;
+}
+function fillCompare() {
+  const prior = priorOf(state.week);
+  comparePick.replaceChildren(
+    el("option", { value: PRIOR }, prior ? `Week before (${short(prior.week_ending)})` : "Week before (none)"),
+    el("option", { value: NONE }, "Nothing"),
+    ...newestFirst.filter(w => w.week_ending !== state.week)
+      .map(w => el("option", { value: w.week_ending }, `Week ending ${dateLabel(w.week_ending)}`)));
+  if (state.compare === state.week) state.compare = PRIOR;
+  comparePick.value = state.compare;
+}
+
+weekPick.addEventListener("change", () => select(weekPick.value));
+comparePick.addEventListener("change", () => { state.compare = comparePick.value; render(); });
+
+// The selected week rides in the link (#2026-10-05) so it can be bookmarked.
+function select(we) {
+  if (!byDate[we]) return;
+  state.week = we;
+  try { if (location.hash.slice(1) !== we) history.replaceState(null, "", "#" + we); } catch {}
+  render();
+}
+window.addEventListener("hashchange", () => select(location.hash.slice(1)));
+
+// ---- tiles ----------------------------------------------------------------
+function renderTiles(cur, cmp) {
+  document.getElementById("week-title").textContent = `Week ending ${dateLabel(cur.week_ending)}`;
   const tiles = [
-    ["Weight", latest.weight_avg, prev?.weight_avg, v => fmt(v, 1), " lb"],
-    ["Steps", latest.steps_avg, prev?.steps_avg, v => fmt(v, 0), ""],
-    ["Sleep", latest.sleep_avg, prev?.sleep_avg, hrs, null],
-    ["Energy", latest.energy_avg, prev?.energy_avg, v => fmt(v, 1), ""],
+    ["Weight", "weight_avg", v => fmt(v, 1), " lb"],
+    ["Steps", "steps_avg", v => fmt(v, 0), ""],
+    ["Sleep", "sleep_avg", hrs, null],
+    ["Energy", "energy_avg", v => fmt(v, 1), ""],
   ];
   const box = document.getElementById("tiles");
-  for (const [label, v, p, f, unit] of tiles) {
+  box.replaceChildren();
+  for (const [label, key, f, unit] of tiles) {
+    const v = cur[key], p = cmp?.[key];
     const t = el("div", { className: "tile" });
     t.append(el("div", { className: "label" }, label), el("div", { className: "value" }, f(v) + (unit && v != null ? unit : "")));
-    if (v != null && p != null) {
+    if (cmp && v != null && p != null) {
       const d = v - p;
       const sign = d > 0 ? "+" : d < 0 ? "−" : "±";
-      const shown = label === "Sleep" ? `${Math.round(Math.abs(d) * 60)}m` : fmt(Math.abs(d), label === "Steps" ? 0 : 1);
-      t.append(el("div", { className: "delta" }, `${sign}${shown} vs. prior week`));
+      const shown = key === "sleep_avg" ? `${Math.round(Math.abs(d) * 60)}m` : fmt(Math.abs(d), key === "steps_avg" ? 0 : 1);
+      t.append(el("div", { className: "delta" }, `${sign}${shown} vs. ${short(cmp.week_ending)}`));
+    } else if (cmp) {
+      t.append(el("div", { className: "delta" }, `no ${label.toLowerCase()} for ${short(cmp.week_ending)}`));
     }
     box.append(t);
   }
 }
 
-// ---- portions vs target --------------------------------------------------
-(() => {
+// ---- portions vs target ---------------------------------------------------
+function renderPortions(cur, cmp) {
+  const legend = document.getElementById("portion-legend");
+  legend.replaceChildren(el("span", { className: "key key-cur" }), ` ${short(cur.week_ending)}`);
+  if (cmp) legend.append(el("span", { className: "key key-cmp" }), ` ${short(cmp.week_ending)}`);
+
   const box = document.getElementById("portions");
-  if (!latest) { box.append(el("p", { className: "empty" }, "No full weeks yet.")); return; }
+  box.replaceChildren();
   for (const key of ["protein", "carb", "fat", "veggies"]) {
     const t = DATA.targets[key] || {};
-    const v = latest[key + "_total"];
+    const v = cur[key + "_total"], c = cmp?.[key + "_total"];
     const lo = t.low, hi = t.high;
-    const max = Math.max(v || 0, hi || lo || 0) * 1.15 || 1;
+    const max = Math.max(v || 0, c || 0, hi || lo || 0) * 1.15 || 1;
     const inRange = v != null && (lo == null || v >= lo) && (hi == null || v <= hi);
     const row = el("div", { className: "portion" });
     row.append(el("div", {}, key[0].toUpperCase() + key.slice(1)));
@@ -221,8 +291,13 @@ if (latest) {
       r.style.width = `${(((hi ?? max) - lo) / max) * 100}%`;
       bar.append(r);
     }
+    if (c != null) {
+      const m = el("div", { className: "mark cmp", title: `${short(cmp.week_ending)}: ${fmt(c, 1)}` });
+      m.style.left = `calc(${(c / max) * 100}% - 2px)`;
+      bar.append(m);
+    }
     if (v != null) {
-      const m = el("div", { className: "mark" });
+      const m = el("div", { className: "mark", title: `${short(cur.week_ending)}: ${fmt(v, 1)}` });
       m.style.left = `calc(${(v / max) * 100}% - 2px)`;
       m.style.background = inRange ? css("--good") : css("--warn");
       bar.append(m);
@@ -232,58 +307,72 @@ if (latest) {
     row.append(el("div", { className: "num " + (inRange ? "ok" : "off") }, fmt(v, 1) + range));
     box.append(row);
   }
-})();
+}
 
 // ---- charts ---------------------------------------------------------------
+// Built once; render() only restyles the points for the selected weeks.
+const charts = [];
 if (window.Chart) {
   Chart.defaults.color = css("--muted");
   Chart.defaults.borderColor = css("--border");
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-  const base = (yTitle) => ({
+  const base = (yTitle, y = {}) => ({
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false } },
-    scales: { y: { title: { display: !!yTitle, text: yTitle } }, x: { grid: { display: false } } },
+    scales: { y: { title: { display: !!yTitle, text: yTitle }, ...y }, x: { grid: { display: false } } },
+    onClick: (_e, els, chart) => {
+      const w = els.length && chart.$rows[els[0].index];
+      if (w && byDate[w.week_ending]) select(w.week_ending);
+    },
   });
-  const accent = css("--accent");
+
+  const make = (id, rows, field, type, opts) => {
+    const chart = new Chart(document.getElementById(id), {
+      type, data: { labels: rows.map(w => short(w.week_ending)),
+                    datasets: [{ data: rows.map(w => w[field]), tension: .25, spanGaps: true,
+                                 borderWidth: type === "bar" ? 1 : 2 }] },
+      options: opts,
+    });
+    chart.$rows = rows;
+    charts.push(chart);
+  };
 
   // Weight uses every week, including weights recovered from the coach's log.
-  new Chart(document.getElementById("c-weight"), {
-    type: "line",
-    data: {
-      labels: weeks.map(w => short(w.week_ending)),
-      datasets: [{
-        data: weeks.map(w => w.weight_avg), borderColor: accent, backgroundColor: accent,
-        pointRadius: weeks.map(w => w.source === "sheet" ? 4 : 3),
-        pointStyle: weeks.map(w => w.source === "sheet" ? "circle" : "rectRot"),
-        tension: .25, spanGaps: true,
-      }],
-    },
-    options: { ...base("lb"), plugins: { legend: { display: false }, tooltip: {
-      callbacks: { afterLabel: c => weeks[c.dataIndex].source === "backfill" ? "(from coach's log)" : "" } } } },
-  });
-
-  const line = (id, field, yTitle, opts = {}) => new Chart(document.getElementById(id), {
-    type: opts.type || "line",
-    data: { labels: full.map(w => short(w.week_ending)),
-            datasets: [{ data: full.map(w => w[field]), borderColor: accent,
-                         backgroundColor: opts.type === "bar" ? css("--accent-soft") : accent,
-                         borderWidth: opts.type === "bar" ? 1 : 2, tension: .25 }] },
-    options: { ...base(yTitle), scales: { ...base(yTitle).scales, y: { ...base(yTitle).scales.y, ...opts.y } } },
-  });
-  line("c-steps", "steps_avg", "", { type: "bar", y: { beginAtZero: true } });
-  line("c-sleep", "sleep_avg", "hours");
-  line("c-energy", "energy_avg", "", { y: { min: 1, max: 5 } });
+  const weightOpts = base("lb");
+  weightOpts.plugins.tooltip = { callbacks: {
+    afterLabel: c => weeks[c.dataIndex].source === "backfill" ? "(from coach's log)" : "" } };
+  make("c-weight", weeks, "weight_avg", "line", weightOpts);
+  make("c-steps", full, "steps_avg", "bar", base("", { beginAtZero: true }));
+  make("c-sleep", full, "sleep_avg", "line", base("hours"));
+  make("c-energy", full, "energy_avg", "line", base("", { min: 1, max: 5 }));
 }
 
-// ---- daily breakdown ------------------------------------------------------
-const pick = document.getElementById("week-pick");
-const withDaily = Object.keys(DATA.daily).sort().reverse();
-for (const we of withDaily) pick.append(el("option", { value: we }, `Week ending ${dateLabel(we)}`));
+function renderCharts(cur, cmp) {
+  const accent = css("--accent"), soft = css("--accent-soft"), muted = css("--faint");
+  for (const chart of charts) {
+    const ds = chart.data.datasets[0];
+    const role = chart.$rows.map(w => w.week_ending === cur.week_ending ? "cur"
+                                   : cmp && w.week_ending === cmp.week_ending ? "cmp" : "");
+    if (chart.config.type === "bar") {
+      ds.backgroundColor = role.map(r => r === "cur" ? accent : r === "cmp" ? muted : soft);
+      ds.borderColor = role.map(r => r === "cmp" ? muted : accent);
+    } else {
+      ds.borderColor = accent;
+      ds.backgroundColor = role.map(r => r === "cur" ? accent : r === "cmp" ? muted : css("--surface"));
+      ds.pointBorderColor = role.map(r => r === "cmp" ? muted : accent);
+      ds.pointRadius = role.map((r, i) => r ? 6 : chart.$rows[i].source === "sheet" ? 3 : 2.5);
+      ds.pointStyle = chart.$rows.map(w => w.source === "sheet" ? "circle" : "rectRot");
+    }
+    chart.update("none");
+  }
+}
 
-function showDaily(we) {
+// ---- daily breakdown --------------------------------------------------------
+function renderDaily(cur) {
+  document.getElementById("daily-title").textContent = `Daily breakdown, week ending ${dateLabel(cur.week_ending)}`;
   const t = document.getElementById("daily");
   t.replaceChildren();
-  const rows = DATA.daily[we] || [];
+  const rows = DATA.daily[cur.week_ending] || [];
   if (!rows.length) { t.append(el("caption", { className: "empty" }, "No daily data for this week.")); return; }
   const cols = [["Day", r => r.day], ["Protein", r => fmt(r.protein, 1)], ["Carb", r => fmt(r.carb, 1)],
                 ["Fat", r => fmt(r.fat, 1)], ["Veggies", r => fmt(r.veggies, 1)], ["Sleep", r => hrs(r.sleep)],
@@ -297,10 +386,7 @@ function showDaily(we) {
     cols.forEach(([h, f]) => { const td = el("td", {}, f(r)); if (h === "Training") td.style.textAlign = "left"; tr.append(td); });
     t.append(tr);
   }
-  pick.value = we;
-  document.querySelectorAll("#weeks tr.clickable").forEach(tr => tr.classList.toggle("selected", tr.dataset.we === we));
 }
-pick.addEventListener("change", () => showDaily(pick.value));
 
 // ---- all weeks table --------------------------------------------------------
 (() => {
@@ -311,22 +397,47 @@ pick.addEventListener("change", () => showDaily(pick.value));
   t.append(head);
   for (const w of [...weeks].reverse()) {
     const tr = el("tr");
+    tr.dataset.we = w.week_ending;
     const first = el("td", {}, dateLabel(w.week_ending));
     if (w.source === "backfill") first.append(" ", el("span", { className: "tag" }, "coach's log"));
     tr.append(first);
     [fmt(w.weight_avg, 1), fmt(w.steps_avg, 0), fmt(w.protein_total, 1), fmt(w.carb_total, 1),
      fmt(w.fat_total, 1), fmt(w.veggies_total, 1), hrs(w.sleep_avg), fmt(w.energy_avg, 1)]
       .forEach(v => tr.append(el("td", {}, v)));
-    if (DATA.daily[w.week_ending]) {
+    if (byDate[w.week_ending]) {
       tr.className = "clickable";
-      tr.dataset.we = w.week_ending;
-      tr.addEventListener("click", () => { showDaily(w.week_ending); pick.scrollIntoView({ behavior: "smooth", block: "center" }); });
+      tr.tabIndex = 0;
+      const go = () => { select(w.week_ending); weekPick.scrollIntoView({ behavior: "smooth", block: "center" }); };
+      tr.addEventListener("click", go);
+      tr.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
     }
     t.append(tr);
   }
 })();
 
-if (withDaily.length) showDaily(withDaily[0]);
+// ---- wire it together -------------------------------------------------------
+function render() {
+  const cur = byDate[state.week];
+  if (!cur) return;
+  weekPick.value = state.week;
+  fillCompare();
+  const cmp = compareWeek();
+  renderTiles(cur, cmp);
+  renderPortions(cur, cmp);
+  renderCharts(cur, cmp);
+  renderDaily(cur);
+  document.querySelectorAll("#weeks tr").forEach(tr => {
+    tr.classList.toggle("selected", tr.dataset.we === state.week);
+    tr.classList.toggle("compared", !!cmp && tr.dataset.we === cmp.week_ending);
+  });
+}
+
+if (full.length) {
+  if (byDate[location.hash.slice(1)]) state.week = location.hash.slice(1);
+  render();
+} else {
+  document.getElementById("tiles").append(el("p", { className: "empty" }, "No full weeks yet."));
+}
 </script>
 </body>
 </html>
