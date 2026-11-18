@@ -121,7 +121,16 @@ select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid 
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .row h2 { margin: 0; }
 .empty { color: var(--muted); }
-.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 16px; }
+.controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; margin-bottom: 16px; }
+.stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.stat .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+.stat .line { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.stat .value { font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .trend { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.trend.good { color: var(--good); } .trend.bad { color: var(--warn); } .trend.flat { color: var(--muted); }
+.stats-wrap { display: flex; flex-direction: column; gap: 4px; margin-left: auto; min-width: 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.note { color: var(--muted); font-size: .8rem; margin: 0; }
 .controls label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: .8rem;
                   text-transform: uppercase; letter-spacing: .04em; min-width: 0; }
 .controls select { font-size: 1rem; text-transform: none; letter-spacing: normal; padding: 8px 10px; max-width: 100%; }
@@ -146,6 +155,10 @@ tr.compared { box-shadow: inset 3px 0 0 var(--muted); }
     <label for="compare-pick">Compare to
       <select id="compare-pick"></select>
     </label>
+    <div class="stats-wrap">
+      <div class="stats" id="stats" aria-live="polite"></div>
+      <p class="note" id="stats-note"></p>
+    </div>
   </section>
 
   <section class="card">
@@ -240,6 +253,45 @@ function select(we) {
   render();
 }
 window.addEventListener("hashchange", () => select(location.hash.slice(1)));
+
+// ---- weekly averages beside the dropdowns -------------------------------------
+// Always against the week before (not the Compare to choice), so the arrows
+// mean the same thing every time. More sleep and energy is better, so up is
+// green; weight has no "good" direction, so its arrow stays neutral.
+const STATS = [
+  { key: "sleep_avg",  label: "Avg sleep", show: hrs,
+    diff: d => `${Math.round(Math.abs(d) * 60)}m`, zero: d => Math.round(d * 60) === 0, better: "up" },
+  { key: "energy_avg", label: "Avg energy", show: v => fmt(v, 1),
+    diff: d => fmt(Math.abs(d), 1), zero: d => Math.abs(d) < 0.05, better: "up" },
+  { key: "weight_avg", label: "Avg weight", show: v => v == null ? "—" : `${fmt(v, 1)} lb`,
+    diff: d => `${fmt(Math.abs(d), 1)} lb`, zero: d => Math.abs(d) < 0.05, better: null },
+];
+
+function renderStats(cur) {
+  const box = document.getElementById("stats");
+  const prior = priorOf(cur.week_ending);
+  box.replaceChildren();
+  for (const st of STATS) {
+    const v = cur[st.key], p = prior?.[st.key];
+    const line = el("div", { className: "line" });
+    line.append(el("span", { className: "value" }, st.show(v)));
+    if (v != null && p != null) {
+      const d = v - p;
+      const dir = st.zero(d) ? "flat" : d > 0 ? "up" : "down";
+      const tone = dir === "flat" || !st.better ? "flat" : dir === st.better ? "good" : "bad";
+      const arrow = { up: "▲", down: "▼", flat: "■" }[dir];
+      const trend = el("span", { className: "trend " + tone },
+        dir === "flat" ? `${arrow} same` : `${arrow} ${st.diff(d)}`);
+      trend.title = `Week before (${short(prior.week_ending)}): ${st.show(p)}`;
+      line.append(trend);
+    }
+    const stat = el("div", { className: "stat" });
+    stat.append(el("span", { className: "label" }, st.label), line);
+    box.append(stat);
+  }
+  const note = document.getElementById("stats-note");
+  note.textContent = prior ? `Arrows: change from ${short(prior.week_ending)}` : "No earlier week to compare with.";
+}
 
 // ---- tiles ----------------------------------------------------------------
 function renderTiles(cur, cmp) {
@@ -422,6 +474,7 @@ function render() {
   weekPick.value = state.week;
   fillCompare();
   const cmp = compareWeek();
+  renderStats(cur);
   renderTiles(cur, cmp);
   renderPortions(cur, cmp);
   renderCharts(cur, cmp);
