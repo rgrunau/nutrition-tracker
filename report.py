@@ -296,11 +296,9 @@ function renderStats(cur) {
 // ---- tiles ----------------------------------------------------------------
 function renderTiles(cur, cmp) {
   document.getElementById("week-title").textContent = `Week ending ${dateLabel(cur.week_ending)}`;
+  // Sleep, energy and weight live in the readout beside the dropdowns.
   const tiles = [
-    ["Weight", "weight_avg", v => fmt(v, 1), " lb"],
-    ["Steps", "steps_avg", v => fmt(v, 0), ""],
-    ["Sleep", "sleep_avg", hrs, null],
-    ["Energy", "energy_avg", v => fmt(v, 1), ""],
+    ["Avg steps / day", "steps_avg", v => fmt(v, 0), ""],
   ];
   const box = document.getElementById("tiles");
   box.replaceChildren();
@@ -314,7 +312,7 @@ function renderTiles(cur, cmp) {
       const shown = key === "sleep_avg" ? `${Math.round(Math.abs(d) * 60)}m` : fmt(Math.abs(d), key === "steps_avg" ? 0 : 1);
       t.append(el("div", { className: "delta" }, `${sign}${shown} vs. ${short(cmp.week_ending)}`));
     } else if (cmp) {
-      t.append(el("div", { className: "delta" }, `no ${label.toLowerCase()} for ${short(cmp.week_ending)}`));
+      t.append(el("div", { className: "delta" }, `no data for ${short(cmp.week_ending)}`));
     }
     box.append(t);
   }
