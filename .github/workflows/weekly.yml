@@ -2,11 +2,12 @@ name: Weekly archive
 
 on:
   schedule:
-    # Cron is UTC only. 06:00 UTC Tuesday = Monday 22:00 PST / 23:00 PDT:
+    # Cron is UTC only. 04:23 UTC Tuesday = Monday 20:23 PST / 21:23 PDT:
     # after the coach's Monday feedback, before the grid is overwritten.
     # The runner's date is then Tuesday, so week_ending_for() files the run
-    # under the Monday just finished.
-    - cron: "0 6 * * 2"
+    # under the Monday just finished. Scheduled runs can start hours late,
+    # worst on the hour, hence the odd minute and the early-evening slot.
+    - cron: "23 4 * * 2"
   workflow_dispatch: # "Run workflow" button for manual runs
 
 permissions:
